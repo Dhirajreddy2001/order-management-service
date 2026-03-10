@@ -2,75 +2,103 @@ package com.example.order_api.service;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 
-import com.example.order_api.dto.OrderItemDTO;
+
 import com.example.order_api.dto.OrderItemResponseDTO;
 import com.example.order_api.dto.OrderRequestDTO;
 import com.example.order_api.dto.OrderResponseDTO;
+import com.example.order_api.entity.OrderEntity;
+import com.example.order_api.entity.OrderItemEntity;
 import com.example.order_api.exception.OrderNotFoundException;
+import com.example.order_api.repository.OrderRepository;
+
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class OrderService {
     // Implement the business logic for creating and retrieving orders here
 
-    private final Map<Long, OrderResponseDTO> orderStore = new HashMap<>();
-    private final AtomicLong idCounter = new AtomicLong(1);
+    private final OrderRepository orderRepository;
 
+    public OrderService(OrderRepository orderRepository) {
+        this.orderRepository = orderRepository;
+    }
+
+    @Transactional
     public OrderResponseDTO createOrder(OrderRequestDTO request) {
-        // For demonstration, we will just create a simple order response with a generated ID
-        List<OrderItemResponseDTO> responseItems = new ArrayList<>();
-        AtomicLong itemCounter = new AtomicLong(1);
+        // For demonstration, we will just create a simple order response with a
+        // generated ID
 
-        for (OrderItemDTO item : request.getItems()){
-            BigDecimal lineTotal = item.getUnitPrice().multiply(BigDecimal.valueOf(item.getQuantity()));
-
-            OrderItemResponseDTO responseItem = new OrderItemResponseDTO();
-            responseItem.setItemId(itemCounter.getAndIncrement());
-            responseItem.setSku(item.getSku());
-            responseItem.setQuantity(item.getQuantity());
-            responseItem.setUnitPrice(item.getUnitPrice());
-            responseItem.setLineTotal(lineTotal);
-            
-            responseItems.add(responseItem);
-        }
-
-        BigDecimal totalAmount = responseItems.stream()
-                .map(OrderItemResponseDTO::getLineTotal)
+        BigDecimal totalAmount = request.getItems().stream()
+                .map(item -> item.getUnitPrice().multiply(BigDecimal.valueOf(item.getQuantity())))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        OrderResponseDTO response = new OrderResponseDTO();
-        response.setOrderId(idCounter.getAndIncrement());
-        response.setCustomerId(request.getCustomerId());
-        response.setStatus("PENDING");
-        response.setTotalAmount(totalAmount);
-        response.setCreatedAt(LocalDateTime.now());
-        response.setUpdatedAt(LocalDateTime.now());
-        response.setItems(responseItems);
+        OrderEntity orderEntity = new OrderEntity();
+        orderEntity.setCustomerId(request.getCustomerId());
+        orderEntity.setTotalAmount(totalAmount);
+        orderEntity.setStatus("PENDING");
 
-        orderStore.put(response.getOrderId(), response);
-        return response;
+        List<OrderItemEntity> orderItems = request.getItems().stream()
+                .map(item -> {
+                    OrderItemEntity orderItem = new OrderItemEntity();
+                    orderItem.setSku(item.getSku());
+                    orderItem.setQuantity(item.getQuantity());
+                    orderItem.setUnitPrice(item.getUnitPrice());
+                    orderItem.setOrder(orderEntity); // Set the relationship
+
+                    return orderItem;
+                })
+                .collect(Collectors.toList());
+
+        orderEntity.setItems(orderItems); // Set the items to the order entity
+
+        OrderEntity savedOrder = orderRepository.save(orderEntity);
+
+        return mapToDTO(savedOrder);
+
     }
 
+    @Transactional(readOnly = true)
     public OrderResponseDTO getOrderById(Long orderId) {
-       
-        OrderResponseDTO order = orderStore.get(orderId);
 
-        if (order == null) {
-            throw new OrderNotFoundException(orderId); // Or throw an exception if you prefer
-        }
-
-        return order;
+        return orderRepository.findById(orderId)
+                .map(this::mapToDTO)
+                .orElseThrow(() -> new OrderNotFoundException(orderId));
     }
 
+    @Transactional(readOnly = true)
     public java.util.List<OrderResponseDTO> getAllOrders() {
-        return new ArrayList<>(orderStore.values());
+        return orderRepository.findAll().stream()
+                .map(this::mapToDTO)
+                .collect(Collectors.toList());
+    }
+
+    private OrderResponseDTO mapToDTO(OrderEntity orderEntity) {
+        List<OrderItemResponseDTO> items = orderEntity.getItems().stream()
+                .map(item -> {
+                    OrderItemResponseDTO responseItem = new OrderItemResponseDTO();
+                    responseItem.setItemId(item.getId());
+                    responseItem.setSku(item.getSku());
+                    responseItem.setQuantity(item.getQuantity());
+                    responseItem.setUnitPrice(item.getUnitPrice());
+                    responseItem.setLineTotal(item.getUnitPrice().multiply(BigDecimal.valueOf(item.getQuantity())));
+                    return responseItem;
+                })
+                .collect(Collectors.toList());
+
+        OrderResponseDTO response = new OrderResponseDTO();
+        response.setOrderId(orderEntity.getId());
+        response.setCustomerId(orderEntity.getCustomerId());
+        response.setItems(items);
+        response.setTotalAmount(orderEntity.getTotalAmount());
+        response.setStatus(orderEntity.getStatus());
+        response.setCreatedAt(orderEntity.getCreatedAt());
+        response.setUpdatedAt(orderEntity.getUpdatedAt());
+        return response;
     }
 
 }

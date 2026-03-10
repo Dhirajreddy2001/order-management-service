@@ -1,36 +1,59 @@
 package com.example.order_api;
 
+import java.math.BigDecimal;
+import java.util.List;
+import java.util.Optional;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import static org.mockito.ArgumentMatchers.any;
+import org.mockito.Mock;
+import static org.mockito.Mockito.when;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.example.order_api.dto.OrderItemDTO;
 import com.example.order_api.dto.OrderRequestDTO;
 import com.example.order_api.dto.OrderResponseDTO;
+import com.example.order_api.entity.OrderEntity;
+import com.example.order_api.exception.OrderNotFoundException;
+import com.example.order_api.repository.OrderRepository;
 import com.example.order_api.service.OrderService;
-import java.math.BigDecimal;
-import java.util.List;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
 
+@ExtendWith(MockitoExtension.class)
+// tells JUnit to activate Mockito — processes @Mock annotations
+// no Spring context needed — pure unit test, very fast
 public class OrderServiceTest {
+
+    @Mock
+    private OrderRepository orderRepository;
+    // Mockito creates a fake OrderRepository
+    // all methods return empty/null by default unless configured with when()
 
     private OrderService orderService;
 
     @BeforeEach
     void setUp() {
-        orderService = new OrderService();
+        // inject the mock repository into the service via constructor
+        // this is why constructor injection is better than field injection
+        // — you can pass mocks without Spring at all
+        orderService = new OrderService(orderRepository);
     }
-    // 1. Test that creating an order with multiple items calculates the total
-    // amount correctly.
-    // 2. Test that creating an order returns a non-null order ID.
-    // 3. Test that the order status is set to "PENDING" upon creation.
-    // 4. Test that the customer ID in the response matches the one in the request.
-    // 5. Test that the order response contains the correct number of items after
-    // creation.
 
     @Test
     void createOrder_ShouldReturnOrderTotals() {
+        // mock repo.save() — return an entity with the same data back
+        // without this mock, save() returns null and mapToDTO() throws NPE
+        when(orderRepository.save(any(OrderEntity.class)))
+                .thenAnswer(invocation -> {
+                    OrderEntity entity = invocation.getArgument(0);
+                    entity.setId(1L);
+                    // simulate DB assigning the id
+                    return entity;
+                });
 
         OrderItemDTO item1 = new OrderItemDTO();
         item1.setSku("SKU123");
@@ -49,21 +72,32 @@ public class OrderServiceTest {
         OrderResponseDTO response = orderService.createOrder(request);
 
         assertEquals(new BigDecimal("119.97"), response.getTotalAmount());
-
     }
 
     @Test
-    void createOrder_ShouldReturnCorrectorderId() {
+    void createOrder_ShouldReturnCorrectOrderId() {
+        when(orderRepository.save(any(OrderEntity.class)))
+                .thenAnswer(invocation -> {
+                    OrderEntity entity = invocation.getArgument(0);
+                    entity.setId(1L);
+                    return entity;
+                });
 
         OrderRequestDTO request = buildSimpleRequest("C123");
         OrderResponseDTO response = orderService.createOrder(request);
 
         assertNotNull(response.getOrderId());
-
     }
 
     @Test
-    void CreateOrder_ShouldSetStatusToPending() {
+    void createOrder_ShouldSetStatusToPending() {
+        when(orderRepository.save(any(OrderEntity.class)))
+                .thenAnswer(invocation -> {
+                    OrderEntity entity = invocation.getArgument(0);
+                    entity.setId(1L);
+                    return entity;
+                });
+
         OrderRequestDTO request = buildSimpleRequest("C123");
         OrderResponseDTO response = orderService.createOrder(request);
 
@@ -72,6 +106,13 @@ public class OrderServiceTest {
 
     @Test
     void createOrder_shouldReturnCorrectCustomerId() {
+        when(orderRepository.save(any(OrderEntity.class)))
+                .thenAnswer(invocation -> {
+                    OrderEntity entity = invocation.getArgument(0);
+                    entity.setId(1L);
+                    return entity;
+                });
+
         OrderRequestDTO request = buildSimpleRequest("C123");
         OrderResponseDTO response = orderService.createOrder(request);
 
@@ -80,6 +121,13 @@ public class OrderServiceTest {
 
     @Test
     void createOrder_shouldReturnOrderAfterCreation() {
+        when(orderRepository.save(any(OrderEntity.class)))
+                .thenAnswer(invocation -> {
+                    OrderEntity entity = invocation.getArgument(0);
+                    entity.setId(1L);
+                    return entity;
+                });
+
         OrderRequestDTO request = buildSimpleRequest("C123");
         OrderResponseDTO response = orderService.createOrder(request);
 
@@ -88,6 +136,13 @@ public class OrderServiceTest {
 
     @Test
     void createOrder_shouldReturnCorrectLineTotalPerItem() {
+        when(orderRepository.save(any(OrderEntity.class)))
+                .thenAnswer(invocation -> {
+                    OrderEntity entity = invocation.getArgument(0);
+                    entity.setId(1L);
+                    return entity;
+                });
+
         OrderItemDTO item = new OrderItemDTO();
         item.setSku("SKU123");
         item.setQuantity(3);
@@ -107,34 +162,47 @@ public class OrderServiceTest {
 
     @Test
     void getOrderById_shouldReturnOrderAfterCreation() {
-        OrderRequestDTO request = buildSimpleRequest("C123");
-        OrderResponseDTO created = orderService.createOrder(request);
+        // build a fake saved entity to return from findById
+        OrderEntity savedEntity = new OrderEntity();
+        savedEntity.setId(1L);
+        savedEntity.setCustomerId("C123");
+        savedEntity.setTotalAmount(new BigDecimal("99.98"));
+        savedEntity.setStatus("PENDING");
+        savedEntity.setItems(List.of());
+        // empty items list — we are testing the lookup not the items
 
-        OrderResponseDTO found = orderService.getOrderById(created.getOrderId());
+        when(orderRepository.findById(1L))
+                .thenReturn(Optional.of(savedEntity));
+        // mock findById to return our fake entity
 
-        assertEquals(created.getOrderId(), found.getOrderId());
+        OrderResponseDTO found = orderService.getOrderById(1L);
+
+        assertEquals(1L, found.getOrderId());
         assertEquals("C123", found.getCustomerId());
     }
 
     @Test
     void getOrderById_shouldThrowExceptionForUnknownId() {
-        assertThrows(RuntimeException.class, () -> {
+        when(orderRepository.findById(999L))
+                .thenReturn(Optional.empty());
+        // mock returns empty — triggers orElseThrow in service
+
+        assertThrows(OrderNotFoundException.class, () -> {
             orderService.getOrderById(999L);
         });
     }
 
-    private OrderRequestDTO buildSimpleRequest(String string) {
-
-        OrderItemDTO item1 = new OrderItemDTO();
-        item1.setSku("SKU123");
-        item1.setQuantity(2);
-        item1.setUnitPrice(new BigDecimal("49.99"));
+    // helper — builds a simple one-item request
+    private OrderRequestDTO buildSimpleRequest(String customerId) {
+        OrderItemDTO item = new OrderItemDTO();
+        item.setSku("SKU123");
+        item.setQuantity(2);
+        item.setUnitPrice(new BigDecimal("49.99"));
 
         OrderRequestDTO request = new OrderRequestDTO();
-        request.setCustomerId(string);
-        request.setItems(List.of(item1));
+        request.setCustomerId(customerId);
+        request.setItems(List.of(item));
 
         return request;
     }
-
 }

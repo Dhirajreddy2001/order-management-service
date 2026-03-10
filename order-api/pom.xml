@@ -48,6 +48,36 @@
             <scope>test</scope>
         </dependency>
 
+        <!-- @DataJpaTest requires test autoconfigure -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-test-autoconfigure</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+        <dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-data-jpa-test</artifactId>
+    <scope>test</scope>
+</dependency>
+
+        <!-- Swagger UI — Spring Boot 4 compatible version -->
+<dependency>
+    <groupId>org.springdoc</groupId>
+    <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+    <version>2.8.6</version>
+</dependency>
+
+<!-- H2 in-memory database -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+        </dependency>
+
     </dependencies>
 
     <build>
