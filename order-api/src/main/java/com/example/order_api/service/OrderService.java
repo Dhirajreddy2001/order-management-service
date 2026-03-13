@@ -3,6 +3,7 @@ package com.example.order_api.service;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
@@ -13,7 +14,9 @@ import com.example.order_api.dto.OrderRequestDTO;
 import com.example.order_api.dto.OrderResponseDTO;
 import com.example.order_api.entity.OrderEntity;
 import com.example.order_api.entity.OrderItemEntity;
+import com.example.order_api.event.OrderCreatedEvent;
 import com.example.order_api.exception.OrderNotFoundException;
+import com.example.order_api.producer.OrderEventProducer;
 import com.example.order_api.repository.OrderRepository;
 
 import org.springframework.transaction.annotation.Transactional;
@@ -24,8 +27,11 @@ public class OrderService {
 
     private final OrderRepository orderRepository;
 
-    public OrderService(OrderRepository orderRepository) {
+    private final OrderEventProducer orderEventProducer;
+
+    public OrderService(OrderRepository orderRepository, OrderEventProducer orderEventProducer) {
         this.orderRepository = orderRepository;
+        this.orderEventProducer = orderEventProducer;
     }
 
     @Transactional
@@ -57,6 +63,23 @@ public class OrderService {
         orderEntity.setItems(orderItems); // Set the items to the order entity
 
         OrderEntity savedOrder = orderRepository.save(orderEntity);
+
+        List<OrderCreatedEvent.OrderItemEvent> eventItems = savedOrder.getItems().stream()
+                        .map(item -> new OrderCreatedEvent.OrderItemEvent(item.getSku(), item.getQuantity()))
+                        .collect(Collectors.toList());
+
+        OrderCreatedEvent event = new OrderCreatedEvent(
+            UUID.randomUUID().toString(),
+            "ORDER_CREATED",
+            savedOrder.getId(),
+            savedOrder.getCustomerId(),
+            savedOrder.getTotalAmount(),
+            eventItems,
+            LocalDateTime.now()
+            );
+
+        orderEventProducer.publishOrderCreatedEvent(event);
+        
 
         return mapToDTO(savedOrder);
 

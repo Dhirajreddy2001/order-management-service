@@ -14,16 +14,21 @@ import static org.mockito.ArgumentMatchers.any;
 import org.mockito.Mock;
 import static org.mockito.Mockito.when;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.kafka.test.context.EmbeddedKafka;
 
 import com.example.order_api.dto.OrderItemDTO;
 import com.example.order_api.dto.OrderRequestDTO;
 import com.example.order_api.dto.OrderResponseDTO;
 import com.example.order_api.entity.OrderEntity;
 import com.example.order_api.exception.OrderNotFoundException;
+import com.example.order_api.producer.OrderEventProducer;
 import com.example.order_api.repository.OrderRepository;
 import com.example.order_api.service.OrderService;
 
 @ExtendWith(MockitoExtension.class)
+@SpringBootTest(properties = "spring.kafka.bootstrap-servers=${spring.embedded.kafka.brokers}")
+@EmbeddedKafka(partitions = 1, topics = { "orders.created" })
 // tells JUnit to activate Mockito — processes @Mock annotations
 // no Spring context needed — pure unit test, very fast
 public class OrderServiceTest {
@@ -33,6 +38,9 @@ public class OrderServiceTest {
     // Mockito creates a fake OrderRepository
     // all methods return empty/null by default unless configured with when()
 
+    @Mock
+    private OrderEventProducer orderEventProducer;
+
     private OrderService orderService;
 
     @BeforeEach
@@ -40,7 +48,7 @@ public class OrderServiceTest {
         // inject the mock repository into the service via constructor
         // this is why constructor injection is better than field injection
         // — you can pass mocks without Spring at all
-        orderService = new OrderService(orderRepository);
+        orderService = new OrderService(orderRepository, orderEventProducer);
     }
 
     @Test
