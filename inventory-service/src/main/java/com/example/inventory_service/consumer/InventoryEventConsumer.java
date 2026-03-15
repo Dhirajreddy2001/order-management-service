@@ -1,5 +1,7 @@
 package com.example.inventory_service.consumer;
 
+import com.example.inventory_service.service.StockService;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -15,14 +17,18 @@ public class InventoryEventConsumer {
     private static final Logger logger = LoggerFactory.getLogger(InventoryEventConsumer.class);
 
     private final ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
-    
-    
+
+    private final StockService stockService;
+
+    public InventoryEventConsumer(StockService stockService) {
+        this.stockService = stockService;
+    }
+
     @KafkaListener(topics = "orders.created", groupId = "inventory-service-group")
     public void handleOrderCreatedEvent(String message) {
         // receive as raw String — StringDeserializer has no trusted packages issue
         try {
             OrderCreatedEvent event = objectMapper.readValue(message, OrderCreatedEvent.class);
-            // manually parse JSON string → OrderCreatedEvent object
 
             logger.info("[inventory-service] Received ORDER_CREATED: orderId={}",
                     event.getOrderId());
@@ -33,9 +39,7 @@ public class InventoryEventConsumer {
             }
 
             event.getItems()
-                    .forEach(item -> logger.info(
-                            "[inventory-service] Reserving stock: sku={} quantity={} for orderId={}",
-                            item.getSku(), item.getQuantity(), event.getOrderId()));
+                    .forEach(item -> stockService.reserveStock(item.getSku(), item.getQuantity(), event.getOrderId()));
 
             logger.info("[inventory-service] Done: orderId={} — {} items processed",
                     event.getOrderId(), event.getItems().size());
