@@ -10,6 +10,7 @@ public class OrderCreatedEvent {
 
     private String eventId;
     private String eventType;
+    private String eventVersion;
     private Long orderId;
     private String customerId;
     private BigDecimal totalAmount;
@@ -22,10 +23,11 @@ public class OrderCreatedEvent {
         // default constructor for deserialization
     }
 
-    public OrderCreatedEvent(String eventId, String eventType, Long orderId, String customerId,
+    public OrderCreatedEvent(String eventId, String eventType, String eventVersion, Long orderId, String customerId,
             BigDecimal totalAmount, List<OrderItemEvent> items, LocalDateTime createdAt) {
         this.eventId = eventId;
         this.eventType = eventType;
+        this.eventVersion = eventVersion;
         this.orderId = orderId;
         this.customerId = customerId;
         this.totalAmount = totalAmount;
@@ -87,6 +89,14 @@ public class OrderCreatedEvent {
 
     public void setCreatedAt(LocalDateTime createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public String getEventVersion() {
+        return eventVersion;
+    }
+
+    public void setEventVersion(String eventVersion) {
+        this.eventVersion = eventVersion;
     }
 
     public static class OrderItemEvent {

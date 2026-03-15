@@ -7,7 +7,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
-
+import org.springframework.transaction.annotation.Transactional;
 
 import com.example.order_api.dto.OrderItemResponseDTO;
 import com.example.order_api.dto.OrderRequestDTO;
@@ -18,8 +18,6 @@ import com.example.order_api.event.OrderCreatedEvent;
 import com.example.order_api.exception.OrderNotFoundException;
 import com.example.order_api.producer.OrderEventProducer;
 import com.example.order_api.repository.OrderRepository;
-
-import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class OrderService {
@@ -65,21 +63,20 @@ public class OrderService {
         OrderEntity savedOrder = orderRepository.save(orderEntity);
 
         List<OrderCreatedEvent.OrderItemEvent> eventItems = savedOrder.getItems().stream()
-                        .map(item -> new OrderCreatedEvent.OrderItemEvent(item.getSku(), item.getQuantity()))
-                        .collect(Collectors.toList());
+                .map(item -> new OrderCreatedEvent.OrderItemEvent(item.getSku(), item.getQuantity()))
+                .collect(Collectors.toList());
 
         OrderCreatedEvent event = new OrderCreatedEvent(
-            UUID.randomUUID().toString(),
-            "ORDER_CREATED",
-            savedOrder.getId(),
-            savedOrder.getCustomerId(),
-            savedOrder.getTotalAmount(),
-            eventItems,
-            LocalDateTime.now()
-            );
+                UUID.randomUUID().toString(),
+                "ORDER_CREATED",
+                "1.0",
+                savedOrder.getId(),
+                savedOrder.getCustomerId(),
+                savedOrder.getTotalAmount(),
+                eventItems,
+                LocalDateTime.now());
 
         orderEventProducer.publishOrderCreatedEvent(event);
-        
 
         return mapToDTO(savedOrder);
 
