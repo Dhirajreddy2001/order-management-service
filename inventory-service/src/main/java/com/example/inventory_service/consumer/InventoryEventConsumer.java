@@ -15,9 +15,8 @@ public class InventoryEventConsumer {
     private static final Logger logger = LoggerFactory.getLogger(InventoryEventConsumer.class);
 
     private final ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
-    // Jackson 2 ObjectMapper — parses raw JSON string into OrderCreatedEvent
-    // avoids JsonDeserializer trusted packages issue entirely
-
+    
+    
     @KafkaListener(topics = "orders.created", groupId = "inventory-service-group")
     public void handleOrderCreatedEvent(String message) {
         // receive as raw String — StringDeserializer has no trusted packages issue
