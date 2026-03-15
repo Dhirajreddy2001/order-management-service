@@ -87,13 +87,13 @@ public class InventoryEventConsumer {
                         String message,
                         @Header(KafkaHeaders.RECEIVED_TOPIC) String topic,
                         // which topic the message came from
-                        @Header("kafka_dlt-exception-fqcn") String exceptionClass,
+                        @Header("kafka_exception-fqcn") String exceptionClass,
                         // fully qualified exception class name — tells you failure type
-                        @Header("kafka_dlt-exception-message") String exceptionMessage,
+                        @Header("kafka_exception-message") String exceptionMessage,
                         // the exception message — tells you WHY it failed
-                        @Header("kafka_dlt-original-offset") long originalOffset,
+                        @Header("kafka_original-offset") long originalOffset,
                         // position in the original topic — use to find the exact message
-                        @Header("kafka_dlt-original-partition") int originalPartition) {
+                        @Header("kafka_original-partition") int originalPartition) {
                 // which partition the original message came from
                 logger.error("[DLT] Exhausted retries. topic={} offset={} partition={} exception={} error={}",
                                 topic, originalOffset, originalPartition, exceptionClass, exceptionMessage);
