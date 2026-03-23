@@ -1,16 +1,22 @@
 package com.example.inventory_service.consumer;
 
+import com.example.inventory_service.repository.ProcessedEventRepository;
+import com.example.inventory_service.entity.ProcessedEventEntity;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import java.time.LocalDateTime;
 import org.springframework.kafka.annotation.BackOff;
 import org.springframework.kafka.annotation.DltHandler;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.annotation.RetryableTopic;
 import org.springframework.kafka.retrytopic.SameIntervalTopicReuseStrategy;
 import org.springframework.kafka.retrytopic.TopicSuffixingStrategy;
+import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.kafka.support.KafkaHeaders;
 import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.example.inventory_service.event.OrderCreatedEvent;
 import com.example.inventory_service.service.StockService;
@@ -29,9 +35,14 @@ public class InventoryEventConsumer {
 
         private final StockService stockService;
 
-        public InventoryEventConsumer(StockService stockService) {
+        private final ProcessedEventRepository processedEventRepository;
+
+        public InventoryEventConsumer(StockService stockService, ProcessedEventRepository processedEventRepository) {
                 this.stockService = stockService;
-                // constructor injection — Spring auto-wires StockService bean
+                this.processedEventRepository = processedEventRepository;
+                // constructor injection — Spring auto-wires StockService and
+                // ProcessedEventRepository beans
+
         }
 
         @RetryableTopic(attempts = "4",
@@ -50,20 +61,25 @@ public class InventoryEventConsumer {
 
         )
         @KafkaListener(topics = "orders.created", groupId = "inventory-service-group")
-        public void handleOrderCreatedEvent(String message) throws JsonProcessingException {
-                // throws declaration — allows JsonProcessingException to propagate
-                // @RetryableTopic needs exceptions to propagate to trigger retry/DLT routing
-                // if you catch and swallow — Spring commits offset and never retries
+        @Transactional
+        public void handleOrderCreatedEvent(String message, Acknowledgment ack) throws JsonProcessingException {
 
                 OrderCreatedEvent event = objectMapper.readValue(message, OrderCreatedEvent.class);
                 // JsonProcessingException propagates here if JSON is malformed
                 // excluded from retry — goes straight to DLT
 
-                logger.info("[inventory-service] Received ORDER_CREATED: orderId={}",
-                                event.getOrderId());
+                logger.info("[inventory-service] Received ORDER_CREATED: orderId={} for eventId={}", event.getOrderId(),
+                                event.getEventId());
+
+                if (processedEventRepository.existsByEventId(event.getEventId())) {
+                        logger.info("Event {} already processed — skipping", event.getEventId());
+                        ack.acknowledge();
+                        return;
+                }
 
                 if (event.getItems() == null || event.getItems().isEmpty()) {
                         logger.warn("Order {} has no items — skipping", event.getOrderId());
+                        ack.acknowledge();
                         return;
                         // returning normally — offset committed — consumer moves on
                 }
@@ -76,8 +92,12 @@ public class InventoryEventConsumer {
                 // if stockService throws DataAccessException (transient) — retry kicks in
                 // if stockService throws NullPointerException (permanent) — straight to DLT
 
+                processedEventRepository.save(new ProcessedEventEntity(event.getEventId(), LocalDateTime.now()));
+
                 logger.info("[inventory-service] Done: orderId={} — {} items processed",
                                 event.getOrderId(), event.getItems().size());
+
+                ack.acknowledge();
         }
 
         @DltHandler
