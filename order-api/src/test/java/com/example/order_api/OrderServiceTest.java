@@ -12,25 +12,23 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import static org.mockito.ArgumentMatchers.any;
 import org.mockito.Mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.kafka.test.context.EmbeddedKafka;
 
 import com.example.order_api.dto.OrderItemDTO;
 import com.example.order_api.dto.OrderRequestDTO;
 import com.example.order_api.dto.OrderResponseDTO;
 import com.example.order_api.entity.OrderEntity;
 import com.example.order_api.exception.OrderNotFoundException;
+import com.example.order_api.message.InvoiceJobMessage;
+import com.example.order_api.producer.InvoiceJobProducer;
 import com.example.order_api.producer.OrderEventProducer;
 import com.example.order_api.repository.OrderRepository;
 import com.example.order_api.service.OrderService;
 
 @ExtendWith(MockitoExtension.class)
-@SpringBootTest(properties = "spring.kafka.bootstrap-servers=${spring.embedded.kafka.brokers}")
-@EmbeddedKafka(partitions = 1, topics = { "orders.created" })
-// tells JUnit to activate Mockito — processes @Mock annotations
-// no Spring context needed — pure unit test, very fast
 public class OrderServiceTest {
 
     @Mock
@@ -41,6 +39,9 @@ public class OrderServiceTest {
     @Mock
     private OrderEventProducer orderEventProducer;
 
+    @Mock
+    private InvoiceJobProducer invoiceJobProducer;
+
     private OrderService orderService;
 
     @BeforeEach
@@ -48,7 +49,7 @@ public class OrderServiceTest {
         // inject the mock repository into the service via constructor
         // this is why constructor injection is better than field injection
         // — you can pass mocks without Spring at all
-        orderService = new OrderService(orderRepository, orderEventProducer);
+        orderService = new OrderService(orderRepository, orderEventProducer, invoiceJobProducer);
     }
 
     @Test
@@ -200,6 +201,16 @@ public class OrderServiceTest {
         });
     }
 
+    @Test
+    void createOrder_enqueuesInvoiceJob(){
+
+        when(orderRepository.save(any())).thenReturn(savedOrderEntity());
+
+        orderService.createOrder(buildSimpleRequest("C123"));
+
+        verify(invoiceJobProducer, times(1)).enqueueInvoiceJob(any(InvoiceJobMessage.class));
+    }
+
     // helper — builds a simple one-item request
     private OrderRequestDTO buildSimpleRequest(String customerId) {
         OrderItemDTO item = new OrderItemDTO();
@@ -212,5 +223,14 @@ public class OrderServiceTest {
         request.setItems(List.of(item));
 
         return request;
+    }
+
+    private OrderEntity savedOrderEntity() {
+        OrderEntity entity = new OrderEntity();
+        entity.setId(1L);
+        entity.setCustomerId("C123");
+        entity.setTotalAmount(new BigDecimal("99.98"));
+        entity.setStatus("PENDING");
+        return entity;
     }
 }

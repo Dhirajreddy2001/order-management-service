@@ -16,6 +16,8 @@ import com.example.order_api.entity.OrderEntity;
 import com.example.order_api.entity.OrderItemEntity;
 import com.example.order_api.event.OrderCreatedEvent;
 import com.example.order_api.exception.OrderNotFoundException;
+import com.example.order_api.message.InvoiceJobMessage;
+import com.example.order_api.producer.InvoiceJobProducer;
 import com.example.order_api.producer.OrderEventProducer;
 import com.example.order_api.repository.OrderRepository;
 
@@ -25,11 +27,14 @@ public class OrderService {
 
     private final OrderRepository orderRepository;
 
-    private final OrderEventProducer orderEventProducer;
+    private final OrderEventProducer orderEventProducer; //kafka producer for order events
 
-    public OrderService(OrderRepository orderRepository, OrderEventProducer orderEventProducer) {
+    private final InvoiceJobProducer invoiceJobProducer; //MQ producer for invoice generation jobs
+
+    public OrderService(OrderRepository orderRepository, OrderEventProducer orderEventProducer, InvoiceJobProducer invoiceJobProducer) {
         this.orderRepository = orderRepository;
         this.orderEventProducer = orderEventProducer;
+        this.invoiceJobProducer = invoiceJobProducer;
     }
 
     @Transactional
@@ -77,6 +82,16 @@ public class OrderService {
                 LocalDateTime.now());
 
         orderEventProducer.publishOrderCreatedEvent(event);
+
+        invoiceJobProducer.enqueueInvoiceJob(
+                new InvoiceJobMessage(
+                        savedOrder.getId(),
+                        savedOrder.getCustomerId(),
+                        savedOrder.getTotalAmount(),
+                        savedOrder.getStatus(),
+                        LocalDateTime.now()
+                )
+        );
 
         return mapToDTO(savedOrder);
 
