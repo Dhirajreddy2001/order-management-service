@@ -5,10 +5,12 @@ import com.example.order_api.message.InvoiceJobMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
 @Component
-public class InvoiceJobProducer {
+@Profile("rabbit")
+public class InvoiceJobProducer implements InvoiceJobPublisher {
 
     private static final Logger log = LoggerFactory.getLogger(InvoiceJobProducer.class);
 
@@ -18,6 +20,7 @@ public class InvoiceJobProducer {
         this.rabbitTemplate = rabbitTemplate;
     }
 
+    @Override
     public void enqueueInvoiceJob(InvoiceJobMessage message) {
         log.info("Publishing invoice job: exchange={}, routingKey={}, orderId={}",
                 RabbitMQConfig.INVOICE_EXCHANGE,

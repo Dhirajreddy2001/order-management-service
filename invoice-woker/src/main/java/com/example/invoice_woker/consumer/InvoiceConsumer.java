@@ -50,5 +50,4 @@ public class InvoiceConsumer {
         // Simulate processing time
         Thread.sleep(2000);
     }
-
 }
