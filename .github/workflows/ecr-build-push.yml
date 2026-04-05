@@ -121,10 +121,10 @@ jobs:
           NOTIFICATION_SERVICE_PORT=${{ env.NOTIFICATION_SERVICE_PORT }}
           INVOICE_WORKER_PORT=${{ env.INVOICE_WORKER_PORT }}
           RDS_ENDPOINT=${{ env.RDS_ENDPOINT }}
-          ORDER_API_DB_URL=jdbc:postgresql://${{ env.RDS_ENDPOINT }}:5432/order_db
+          ORDER_API_DB_URL=jdbc:postgresql://${{ env.RDS_ENDPOINT }}:5432/order_db?sslmode=require
           ORDER_API_DB_USERNAME=app
           ORDER_API_DB_PASSWORD=${{ secrets.ORDER_API_DB_PASSWORD }}
-          INVENTORY_DB_URL=jdbc:postgresql://${{ env.RDS_ENDPOINT }}:5432/inventory_db
+          INVENTORY_DB_URL=jdbc:postgresql://${{ env.RDS_ENDPOINT }}:5432/inventory_db?sslmode=require
           INVENTORY_DB_USERNAME=app
           INVENTORY_DB_PASSWORD=${{ secrets.INVENTORY_DB_PASSWORD }}
           EOF
