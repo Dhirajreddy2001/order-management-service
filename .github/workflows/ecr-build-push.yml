@@ -1,0 +1,152 @@
+name: Build, Push, and Deploy Docker Images to ECR
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  EC2_USER: ec2-user
+  EC2_DEPLOY_DIR: /home/ec2-user/order-management-service
+  ORDER_API_PROFILE: dev,rabbit
+  INVENTORY_SERVICE_PROFILE: dev
+  NOTIFICATION_SERVICE_PROFILE: dev
+  INVOICE_WORKER_PROFILE: rabbit
+  ECR_IMAGE_TAG: latest
+  ORDER_API_PORT: 8080
+  INVENTORY_SERVICE_PORT: 8081
+  NOTIFICATION_SERVICE_PORT: 8082
+  INVOICE_WORKER_PORT: 8083
+  KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+  KAFKA_EXTERNAL_PORT: 9092
+  RABBITMQ_HOST: rabbitmq
+  RABBITMQ_PORT: 5672
+  RABBITMQ_UI_PORT: 15672
+  RABBITMQ_USERNAME: app
+  RABBITMQ_PASSWORD: app
+  KAFKA_EXTERNAL_HOST: ${{ secrets.EC2_HOST }}
+  RDS_ENDPOINT: ${{ vars.RDS_ENDPOINT }}
+
+jobs:
+  build-and-push:
+    name: Build and push ${{ matrix.service }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: order-api
+            image: order-api
+          - service: invoice-woker
+            image: invoice-woker
+          - service: inventory-service
+            image: inventory-service
+          - service: notification-service
+            image: notification-service
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./${{ matrix.service }}
+          file: ./${{ matrix.service }}/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/${{ matrix.image }}:${{ github.sha }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ matrix.image }}:latest
+
+  deploy-to-ec2:
+    name: Deploy stack to EC2
+    runs-on: ubuntu-latest
+    needs: build-and-push
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+
+      - name: Render deployment env file
+        shell: bash
+        run: |
+          cat > .env.prod <<EOF
+          ECR_REGISTRY=${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG=${{ github.sha }}
+          AWS_REGION=${{ env.AWS_REGION }}
+          KAFKA_BOOTSTRAP_SERVERS=${{ env.KAFKA_BOOTSTRAP_SERVERS }}
+          KAFKA_EXTERNAL_HOST=${{ secrets.EC2_HOST }}
+          KAFKA_EXTERNAL_PORT=${{ env.KAFKA_EXTERNAL_PORT }}
+          RABBITMQ_HOST=${{ env.RABBITMQ_HOST }}
+          RABBITMQ_PORT=${{ env.RABBITMQ_PORT }}
+          RABBITMQ_UI_PORT=${{ env.RABBITMQ_UI_PORT }}
+          RABBITMQ_USERNAME=${{ env.RABBITMQ_USERNAME }}
+          RABBITMQ_PASSWORD=${{ env.RABBITMQ_PASSWORD }}
+          ORDER_API_PROFILE=${{ env.ORDER_API_PROFILE }}
+          INVENTORY_SERVICE_PROFILE=${{ env.INVENTORY_SERVICE_PROFILE }}
+          NOTIFICATION_SERVICE_PROFILE=${{ env.NOTIFICATION_SERVICE_PROFILE }}
+          INVOICE_WORKER_PROFILE=${{ env.INVOICE_WORKER_PROFILE }}
+          ORDER_API_PORT=${{ env.ORDER_API_PORT }}
+          INVENTORY_SERVICE_PORT=${{ env.INVENTORY_SERVICE_PORT }}
+          NOTIFICATION_SERVICE_PORT=${{ env.NOTIFICATION_SERVICE_PORT }}
+          INVOICE_WORKER_PORT=${{ env.INVOICE_WORKER_PORT }}
+          RDS_ENDPOINT=${{ env.RDS_ENDPOINT }}
+          ORDER_API_DB_URL=jdbc:postgresql://${{ env.RDS_ENDPOINT }}:5432/order_db
+          ORDER_API_DB_USERNAME=app
+          ORDER_API_DB_PASSWORD=${{ secrets.ORDER_API_DB_PASSWORD }}
+          INVENTORY_DB_URL=jdbc:postgresql://${{ env.RDS_ENDPOINT }}:5432/inventory_db
+          INVENTORY_DB_USERNAME=app
+          INVENTORY_DB_PASSWORD=${{ secrets.INVENTORY_DB_PASSWORD }}
+          EOF
+
+      - name: Copy deployment files to EC2
+        shell: bash
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ env.EC2_USER }}@${{ secrets.EC2_HOST }} "mkdir -p ${{ env.EC2_DEPLOY_DIR }}"
+          scp -o StrictHostKeyChecking=no docker-compose.prod.yml .env.prod ${{ env.EC2_USER }}@${{ secrets.EC2_HOST }}:${{ env.EC2_DEPLOY_DIR }}/
+
+      - name: Login EC2 to Amazon ECR
+        shell: bash
+        run: |
+          aws ecr get-login-password --region ${{ env.AWS_REGION }} | ssh -o StrictHostKeyChecking=no ${{ env.EC2_USER }}@${{ secrets.EC2_HOST }} "docker login --username AWS --password-stdin ${{ steps.login-ecr.outputs.registry }}"
+
+      - name: Start stack on EC2
+        shell: bash
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ env.EC2_USER }}@${{ secrets.EC2_HOST }} <<'EOF'
+          set -e
+          cd ${{ env.EC2_DEPLOY_DIR }}
+          docker compose --env-file .env.prod -f docker-compose.prod.yml pull
+          docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --remove-orphans
+          docker compose --env-file .env.prod -f docker-compose.prod.yml ps
+          EOF
