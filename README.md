@@ -1,6 +1,6 @@
 # 🏗️ Order Management Service
 
-Monorepo for a Spring Boot order-processing platform with PostgreSQL, Kafka, RabbitMQ, AWS SQS via LocalStack, and multiple consumer services.
+This is a Spring Boot order-processing platform with PostgreSQL, Kafka, RabbitMQ, AWS SQS via LocalStack, and multiple consumer services.
 
 The repo is organized as a single root workspace with these services:
 - 🔌 `order-api`
